@@ -34,7 +34,7 @@ const stubResponse = {
   needs_review: false,
 };
 
-export function validateExtractInput(body) {
+function validateExtractInput(body) {
   return extractInputSchema.safeParse(body);
 }
 
