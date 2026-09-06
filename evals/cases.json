@@ -1,0 +1,90 @@
+[
+  {
+    "id": 1,
+    "text": "John Smith is a Software Engineer with 4 years of experience. He has a Bachelor's degree in Computer Science. Skills: JavaScript, Node.js, PostgreSQL.",
+    "expected": {
+      "name": "John Smith",
+      "most_recent_title": "Software Engineer",
+      "years_experience": 4,
+      "education_level": "bachelors",
+      "needs_review": false
+    }
+  },
+  {
+    "id": 2,
+    "text": "Jane Doe is a Backend Developer. She has worked with Python and PostgreSQL.",
+    "expected": {
+      "name": "Jane Doe",
+      "most_recent_title": "Backend Developer",
+      "years_experience": null,
+      "education_level": "unknown",
+      "needs_review": false
+    }
+  },
+  {
+    "id": 3,
+    "text": "Alex Brown worked as a Software Developer from 2020 to 2024. He earned a Master's degree in Computer Science. Skills include Java, Docker, and Git.",
+    "expected": {
+      "name": "Alex Brown",
+      "most_recent_title": "Software Developer",
+      "years_experience": 4,
+      "education_level": "masters",
+      "needs_review": false
+    }
+  },
+  {
+    "id": 4,
+    "text": "Sam Lee has experience in web development. The CV lists the current role as Engineer and does not provide employment dates.",
+    "expected": {
+      "name": "Sam Lee",
+      "most_recent_title": "Engineer",
+      "years_experience": null,
+      "education_level": "unknown",
+      "needs_review": false
+    }
+  },
+  {
+    "id": 5,
+    "text": "Maria Garcia completed high school and later worked as a Junior Designer. She has skills in Photoshop and Figma.",
+    "expected": {
+      "name": "Maria Garcia",
+      "most_recent_title": "Junior Designer",
+      "years_experience": null,
+      "education_level": "high_school",
+      "needs_review": false
+    }
+  },
+  {
+    "id": 6,
+    "text": "Chris Wilson is a Data Scientist. Skills: Python, SQL, Pandas, NumPy, scikit-learn, TensorFlow, PyTorch, Docker.",
+    "expected": {
+      "name": "Chris Wilson",
+      "most_recent_title": "Data Scientist",
+      "years_experience": null,
+      "education_level": "unknown",
+      "needs_review": false
+    }
+  },
+  {
+    "id": 7,
+    "text": "Worked from January 2021 to January 2023 as a Developer. The CV does not state a person's name, education, or skills.",
+    "expected": {
+      "name": null,
+      "most_recent_title": "Developer",
+      "years_experience": 2,
+      "education_level": "unknown",
+      "needs_review": false
+    }
+  },
+  {
+    "id": 8,
+    "text": "The candidate may have worked as an engineer sometime between 2018 and 2022, but the dates are unclear and overlapping roles make the total experience uncertain.",
+    "expected": {
+      "name": null,
+      "most_recent_title": null,
+      "years_experience": null,
+      "education_level": "unknown",
+      "needs_review": true
+    }
+  }
+]
