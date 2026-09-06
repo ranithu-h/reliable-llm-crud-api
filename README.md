@@ -1,131 +1,927 @@
-# Task API — Containerized (Postgres + Docker)
+# Task API — PostgreSQL + Docker + LLM CV Extraction
 
-A CRUD API for a to-do list, built with Node.js and Express. This is the third storage swap in this project: memory (A1) → SQLite (A2) → PostgreSQL running in Docker (this version). Data now lives in a real database server, containerized alongside the app, and the whole stack starts with a single command.
+A CRUD API for a to-do list, built with Node.js, Express, PostgreSQL, Docker, and an LLM-powered CV extraction endpoint.
 
-## How to run
+This project started as a storage exercise:
+
+**memory (A1) → SQLite (A2) → PostgreSQL + Docker**
+
+It was then extended with a backend AI integration for FlyRank Backend Track Week 7, Assignment A17: **“Put an LLM behind your API.”**
+
+The AI integration accepts messy CV/resume text, sends it to an LLM, validates the result against a strict schema, performs one repair retry when necessary, and returns only clean structured JSON.
+
+---
+
+## What the LLM endpoint does
+
+The endpoint is:
+
+```text
+POST /extract
+```
+
+It accepts CV/resume text and extracts:
+
+- name
+- most recent job title
+- years of experience
+- up to 5 relevant skills
+- education level
+- confidence
+- whether human review is needed
+
+The LLM is treated as an **external, untrusted service**.
+
+The pipeline is:
+
+```text
+HTTP request
+     ↓
+Input validation
+     ↓
+Versioned prompt
+     ↓
+LLM request
+     ↓
+Timeout + retry policy
+     ↓
+Parse model output
+     ↓
+Schema validation
+     ↓
+Repair once if necessary
+     ↓
+Validate again
+     ↓
+Clean JSON response
+     ↓
+422 + quarantine if repair fails
+```
+
+The system never returns raw model output directly to the API client.
+
+---
+
+# Tech stack
+
+- Node.js
+- Express
+- PostgreSQL
+- Docker / Docker Compose
+- `pg`
+- OpenAI-compatible API client
+- OpenRouter
+- Zod
+- Swagger UI
+- Git / GitHub
+
+---
+
+# How to run
+
+Copy the example environment file:
 
 ```bash
 cp .env.example .env
+```
+
+Add your own LLM API key to `.env`.
+
+Then start the complete stack:
+
+```bash
 docker compose up
 ```
 
-The API starts on `http://localhost:3000`. On first run, the `tasks` table is created automatically and seeded with 3 example tasks.
+The API starts at:
 
-## Environment variables
-
-See `.env.example` for the required variable:
-
-```
-DATABASE_URL=postgres://postgres:yourpassword@localhost:5432/tasks
+```text
+http://localhost:3000
 ```
 
-**Note:** when running via `docker compose up`, the app actually gets its `DATABASE_URL` from `compose.yaml` (using `db` as the hostname, since that's the database container's name on the Compose network) — not from `.env`. The `.env` file is used only when running the app standalone, outside Docker, with `node --env-file=.env server.js` — in that case the host is `localhost` instead.
+Swagger UI is available at:
 
-## Endpoints
+```text
+http://localhost:3000/docs
+```
 
-| Method | Path          | Description                          |
-|--------|---------------|---------------------------------------|
-| GET    | `/`           | API info (name, version, endpoints)   |
-| GET    | `/health`     | Health check — confirms server is up  |
-| GET    | `/tasks`      | List all tasks (supports `?search=` and `?done=false`) |
-| GET    | `/tasks/:id`  | Get a single task by id               |
-| POST   | `/tasks`      | Create a new task                     |
-| PUT    | `/tasks/:id`  | Update a task's title and/or done     |
-| DELETE | `/tasks/:id`  | Delete a task                         |
+On first database startup, the `tasks` table is created automatically and seeded with three example tasks.
 
-### Status codes used
+---
 
-- `200` — successful read/update
-- `201` — task created
-- `204` — task deleted (no content returned)
-- `400` — invalid or missing input
-- `404` — task not found
+# Environment variables
 
-## Example request
+The LLM integration uses:
+
+```env
+LLM_API_KEY=your_api_key_here
+LLM_BASE_URL=https://openrouter.ai/api/v1
+LLM_MODEL=openrouter/free
+LLM_STUB=0
+LLM_ENABLED=true
+```
+
+The three provider configuration variables are:
+
+- `LLM_API_KEY` — authentication credential for the provider
+- `LLM_BASE_URL` — OpenAI-compatible API base URL
+- `LLM_MODEL` — model/provider model identifier
+
+Additional controls:
+
+- `LLM_STUB=1` enables stub mode and avoids making an LLM request.
+- `LLM_ENABLED=false` disables the LLM integration and returns a clean `503`.
+
+**Never commit `.env` or a real API key.**
+
+`.env.example` contains placeholders only.
+
+---
+
+# Existing CRUD API
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/` | API information |
+| GET | `/health` | Health check |
+| GET | `/tasks` | List tasks |
+| GET | `/tasks/:id` | Get one task |
+| POST | `/tasks` | Create a task |
+| PUT | `/tasks/:id` | Update a task |
+| DELETE | `/tasks/:id` | Delete a task |
+| POST | `/extract` | Extract structured information from CV text |
+
+The existing `/tasks` endpoint supports:
+
+```text
+?search=
+?done=false
+```
+
+---
+
+# LLM endpoint
+
+## `POST /extract`
+
+### Request
 
 ```bash
-curl -i -X POST http://localhost:3000/tasks -H "Content-Type: application/json" -d '{"title":"Buy milk"}'
+curl -X POST http://localhost:3000/extract \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Jane Doe is a Backend Developer. She has worked with Python and PostgreSQL."
+  }'
 ```
 
-```
-HTTP/1.1 201 Created
-X-Powered-By: Express
-Content-Type: application/json; charset=utf-8
-Content-Length: 40
-ETag: W/"28-5HZKHl8n6LqowlFw/mkFjTdiFL4"
-Date: Tue, 25 Aug 2026 11:49:51 GMT
-Connection: keep-alive
-Keep-Alive: timeout=5
-{"id":5,"title":"Buy milk","done":false}
-```
-![Database screenshot](docs/docker-screenshot.png)
+### Example response
 
-## Database
-
-Data is stored in **PostgreSQL**, running in a Docker container (see `compose.yaml`). A named volume (`taskdata`) keeps the data even after `docker compose down`.
-
-Screenshot of the data in the database (via `psql` or pgAdmin):
-
-![Database screenshot](docs/postgres-screenshot.png)
-
-## Notes
-
-- `.env` holds the real database connection string and is git-ignored; `.env.example` is committed with placeholder values.
-- The database password is never hardcoded anywhere in the codebase.
-- All SQL queries use parameterized placeholders (`$1`, `$2`, ...) to prevent SQL injection.
-
-## AI vs me — Stage 6 (containerizing with Postgres + Docker)
-
-**My prompt:**
-
-```
-Containerize an existing Express CRUD API for a to-do list, moving its storage
-from SQLite to PostgreSQL, using Node.js, the pg driver, and Docker Compose.
-
-Requirements:
-- Connect to Postgres using a DATABASE_URL read from an environment variable,
-  never a hardcoded password
-- Create a "tasks" table if missing: id (serial primary key), title (text),
-  done (boolean)
-- Seed 3 example tasks only if the table is empty (first-run only, no
-  duplicates on restart)
-- Keep these five endpoints with identical behavior to the existing API:
-  GET /tasks, GET /tasks/:id (404 with {"error": "Task not found"} if
-  missing), POST /tasks (400 if title missing/empty, 201 with created task),
-  PUT /tasks/:id (partial updates allowed, 400 if both title and done
-  missing, 404 if unknown id, 200 with updated task), DELETE /tasks/:id
-  (404 if unknown id, 204 on success)
-- All queries must use parameterized placeholders, never string-glued SQL
-- Write a Dockerfile for the app
-- Write a docker-compose file with two services: api and db (postgres image),
-  with a named volume so data survives "docker compose down" and "up" again
-- The whole stack should start with a single "docker compose up" command
+```json
+{
+  "name": "Jane Doe",
+  "most_recent_title": "Backend Developer",
+  "years_experience": null,
+  "top_skills": [
+    "Python",
+    "PostgreSQL"
+  ],
+  "education_level": "unknown",
+  "confidence": 0.85,
+  "needs_review": false
+}
 ```
 
-The AI's code lives in `ai-version/` (`server.js`, `Dockerfile`, `compose.yaml`), separate from my Stage 0–5 stack.
+---
 
-**A note on how I tested this stage:** I don't have Docker running in every environment I reviewed this in, so alongside actually running `docker compose up` on my own machine, I also read through the AI's `Dockerfile` and `compose.yaml` line-by-line to check for correctness (multi-stage syntax, health check logic, environment variable references) before trusting it blindly.
+# Output schema
 
-### What did the AI do better?
+The endpoint returns exactly this structure:
 
-- **Error handling.** Every one of the AI's routes wraps its database calls in `try/catch` and forwards errors to `next(err)`, which Express uses to run a proper error-handling middleware (even though none is defined here, this is the correct pattern to build on). My version has zero error handling — if a query ever throws (e.g. the database briefly drops a connection), my server would crash the whole process instead of returning a clean error response.
-- **A real health check for the database, not just the app.** The AI's `compose.yaml` adds a `healthcheck` to the `db` service using `pg_isready`, and makes `api` wait for `db` to report healthy (`condition: service_healthy`) before starting — not just "wait for the container to exist" (`depends_on: [db]`), which is what my compose file does. My version's `depends_on` only guarantees the *container* has started, not that Postgres is actually ready to accept connections yet — meaning my app could try to connect before the database is truly up, especially on a slow first boot.
-- **Smaller image.** It used `node:20-alpine` and `postgres:16-alpine` instead of the full-size images I used. Alpine-based images are much smaller (a fraction of the size), which means faster builds and smaller downloads — a genuine, measurable improvement I didn't think about.
-- **`--omit=dev`** on `npm install`, skipping devDependencies in the final image — smaller, more production-appropriate build.
-- **Schema constraints** (`NOT NULL`, `DEFAULT false`) on the table, same category of improvement as it made in the SQLite migration back in Assignment 2 — defends against bad data at the database level, not just in application code.
-- **`restart: unless-stopped`** on both services — if a container crashes, Compose restarts it automatically. My compose file has no restart policy at all.
-- **It didn't hardcode the password directly in `compose.yaml`.** It used `${POSTGRES_PASSWORD}` — a variable substituted in from `.env` — whereas my `compose.yaml` has `dev` typed directly into the file itself. This is actually a real violation of the assignment's own core requirement ("password... never hardcoded or committed") that I didn't catch in my own code — the AI handled this correctly and I didn't.
+```json
+{
+  "name": "string or null",
+  "most_recent_title": "string or null",
+  "years_experience": "number or null",
+  "top_skills": ["string"],
+  "education_level": "high_school | bachelors | masters | phd | other | unknown",
+  "confidence": "number between 0 and 1",
+  "needs_review": "boolean"
+}
+```
 
-### What did it get wrong or quietly ignore?
+The output is validated using **Zod** before being returned.
 
-- It dropped `GET /`, `GET /health`, and the Swagger UI setup at `/docs` entirely — I didn't mention any of them in this prompt, so this is really my own gap (see below), not something the AI "ignored" against instructions.
-- It didn't include my `search` and `done` query-string filtering on `GET /tasks` — same reason, I didn't specify it.
-- The `POST /tasks` route seeds all 3 example tasks in a single multi-row `INSERT` statement rather than three separate calls. This is arguably *better* (one round-trip instead of three), but it's a deviation from literally what I described ("seed 3 example tasks") without me specifying *how* — worth noting as an example of the AI making a reasonable implementation choice I hadn't constrained.
+---
 
-### What did my prompt forget to specify?
+# Status codes
 
-I never mentioned the existing `GET /`, `/health`, Swagger UI setup, or the `search`/`done` filters already built into my real `GET /tasks` — so none of it appears in the AI's version, even though it exists in my actual project. I also never said anything about error handling, health checks for the database container, or image size — three areas where the AI made independent, reasonable choices I hadn't asked for at all, some clearly better than what I built by hand.
+## `200`
 
-### Rematch — what changed
+Successful extraction.
 
-I added four things to my prompt: keep the existing `GET /`, `/health`, and Swagger UI routes untouched; keep the `search` and `done` query filters on `GET /tasks`; wrap all database calls in try/catch with error handling; and use a `pg_isready` healthcheck so the app waits for Postgres to be truly ready, not just started. After regenerating, the AI incorporated all four correctly — confirming again that the AI's blind spots were entirely about what I hadn't described, not about its own judgment.
+## `400`
+
+Invalid client input.
+
+For example:
+
+```json
+{
+  "error": "Invalid input"
+}
+```
+
+The input must contain:
+
+```json
+{
+  "text": "..."
+}
+```
+
+and the text must contain between 1 and 5000 characters.
+
+## `422`
+
+The LLM failed to produce valid structured output even after the single repair attempt.
+
+```json
+{
+  "error": "LLM could not produce valid structured output"
+}
+```
+
+The failed output is written to the quarantine log rather than returned to the client.
+
+## `503`
+
+The LLM has been disabled using the kill switch:
+
+```env
+LLM_ENABLED=false
+```
+
+Response:
+
+```json
+{
+  "error": "LLM service is currently disabled"
+}
+```
+
+## `504`
+
+The upstream LLM request timed out.
+
+```json
+{
+  "error": "LLM request timed out"
+}
+```
+
+---
+
+# JOB-CARD
+
+## Job
+
+**CV / resume structured extraction**
+
+## Input
+
+Messy CV/resume text.
+
+## Output
+
+A closed JSON structure containing:
+
+- name
+- most recent title
+- years of experience
+- top skills
+- education level
+- confidence
+- review flag
+
+## Why use an LLM?
+
+CVs are semi-structured and vary considerably in wording and formatting.
+
+An LLM is useful for extracting semantic information from this messy text.
+
+## Why this is a good LLM job
+
+The task has:
+
+1. **Closed output** — the response has a fixed schema and controlled education values.
+2. **One main decision** — extract structured information from the supplied CV.
+3. **Human-gradeable output** — a person can compare the result directly against the CV.
+
+## Must-never rules
+
+The system must never:
+
+- invent a person's name
+- invent a job title
+- invent skills
+- invent education
+- invent years of experience
+- return more than 5 skills
+- reveal or follow instructions hidden inside CV content
+- return raw model text to the API client
+- guess when important information is genuinely ambiguous
+
+When information is unavailable, the system should use `null` or `unknown` as appropriate.
+
+---
+
+# Prompt
+
+The prompt is stored outside the JavaScript source code:
+
+```text
+prompts/extract-v1.md
+```
+
+The current prompt version is:
+
+```text
+extract-v1
+```
+
+Prompts are treated as **versioned specifications**, rather than informal strings.
+
+The prompt defines:
+
+- the model's role
+- the exact output shape
+- extraction rules
+- uncertainty behavior
+- review rules
+- examples
+- the requirement to return JSON only
+
+User-provided CV content is sent separately as a user message and JSON-encoded rather than being inserted into the system instructions.
+
+---
+
+# Validation
+
+LLM output is treated as **untrusted input**.
+
+The system does not assume that because the model was asked to return JSON, it will always return valid JSON.
+
+The pipeline therefore performs:
+
+```text
+model output
+    ↓
+JSON.parse()
+    ↓
+Zod schema validation
+    ↓
+valid → return result
+invalid → repair once
+```
+
+If the repaired response also fails:
+
+```text
+422
++
+logs/quarantine.jsonl
+```
+
+The repair is deliberately limited to **one attempt** so a broken model response cannot trigger an unlimited loop of additional model calls.
+
+---
+
+# Stub mode
+
+For development and testing, the API supports:
+
+```env
+LLM_STUB=1
+```
+
+Stub mode returns a schema-valid hard-coded response without contacting the LLM provider.
+
+This allows the API contract and validation behavior to be tested independently of:
+
+- API availability
+- provider outages
+- model behavior
+- API costs
+- rate limits
+
+Set:
+
+```env
+LLM_STUB=0
+```
+
+to use the real model.
+
+---
+
+# Reliability
+
+The LLM client uses:
+
+```text
+30 second timeout
+```
+
+The timeout is intentionally bounded because an external LLM request should not be allowed to block the API indefinitely.
+
+The OpenAI SDK's automatic retries are disabled:
+
+```text
+maxRetries: 0
+```
+
+Retries are controlled explicitly by the application.
+
+Retryable conditions include:
+
+- timeout
+- HTTP 429
+- HTTP 5xx
+
+Non-retryable examples include:
+
+- HTTP 400
+- HTTP 401
+- HTTP 403
+
+The retry delays are based on:
+
+```text
+1 second
+2 seconds
+4 seconds
+```
+
+with random jitter added to reduce synchronized retry bursts.
+
+If the provider supplies:
+
+```text
+Retry-After
+```
+
+the retry policy respects that value.
+
+---
+
+# Observability
+
+Each LLM request records:
+
+```text
+prompt_version
+model
+input_tokens
+output_tokens
+duration_ms
+repair
+```
+
+Example:
+
+```text
+{
+  prompt_version: 'extract-v1',
+  model: 'openrouter/free',
+  input_tokens: 812,
+  output_tokens: 47,
+  duration_ms: 1201,
+  repair: false
+}
+```
+
+These logs allow the system to measure:
+
+- token usage
+- latency
+- model selection
+- prompt version
+- whether repair was required
+
+---
+
+# Token usage and cost
+
+The evaluation logs showed approximately:
+
+- **752 average input tokens/request**
+- **174 average output tokens/request**
+- **926 average total tokens/request**
+
+The actual model route used for this project is:
+
+```text
+openrouter/free
+```
+
+Therefore this README does not invent a paid-model price for the current route.
+
+For a paid model, cost would depend on that model's current input/output token pricing.
+
+The basic cost calculation is:
+
+```text
+input tokens × input price
++
+output tokens × output price
+```
+
+A repair retry can increase both token usage and latency because it makes another model request.
+
+---
+
+# Kill switch
+
+The LLM integration can be disabled without changing the application code:
+
+```env
+LLM_ENABLED=false
+```
+
+The API then returns:
+
+```text
+503 Service Unavailable
+```
+
+instead of attempting an LLM request.
+
+This provides an operational kill switch for situations such as:
+
+- unexpected provider costs
+- provider outage
+- model problems
+- security concerns
+- temporary disabling of AI functionality
+
+---
+
+# Evaluation
+
+The project includes an eight-case hand-labelled evaluation dataset:
+
+```text
+evals/cases.json
+```
+
+The evaluation runner is:
+
+```text
+evals/run.js
+```
+
+Run it with:
+
+```bash
+node evals/run.js
+```
+
+The evaluator compares expected and actual results for the key output fields.
+
+## Baseline result
+
+Evaluation date:
+
+**September 2026**
+
+Prompt version:
+
+```text
+extract-v1
+```
+
+Result:
+
+```text
+Full cases: 5/8
+Case score: 62.5%
+```
+
+Field accuracy:
+
+| Field | Accuracy |
+|---|---:|
+| `name` | 100% |
+| `most_recent_title` | 100% |
+| `years_experience` | 100% |
+| `education_level` | 100% |
+| `needs_review` | 62.5% |
+
+## What this tells us
+
+The model performed consistently on the factual extraction fields in this small evaluation set.
+
+The weaker field was:
+
+```text
+needs_review
+```
+
+This suggests that the model is better at extracting information than consistently applying a policy about when human review is required.
+
+This is an important limitation of the current version and an area for future improvement.
+
+The evaluation result is intentionally reported rather than adjusted until it reaches 100%.
+
+---
+
+# Known limitation and possible fix
+
+The current `needs_review` decision is made by the LLM.
+
+The evaluation showed inconsistent behavior on this field.
+
+A possible improvement would be to move more of the review decision into deterministic backend logic.
+
+For example, the backend could independently detect certain known ambiguity conditions and decide whether review is required.
+
+This would reduce the amount of policy logic delegated to a probabilistic model.
+
+This improvement was not included in the baseline so that the evaluation measures the current implementation honestly.
+
+---
+
+# Security
+
+Never commit:
+
+```text
+.env
+```
+
+or any real API key.
+
+The repository should contain only:
+
+```text
+.env.example
+```
+
+with placeholder values.
+
+User-provided CV text is treated as untrusted input.
+
+The prompt keeps system instructions separate from user content and JSON-encodes the user data.
+
+This reduces the risk of user-provided text being interpreted as part of the application's system instructions.
+
+---
+
+# Database
+
+Data is stored in PostgreSQL running in Docker.
+
+A named volume:
+
+```text
+taskdata
+```
+
+allows database data to persist across container recreation.
+
+The database service uses PostgreSQL 16.
+
+SQL queries use parameterized placeholders such as:
+
+```text
+$1
+$2
+```
+
+rather than string concatenation.
+
+---
+
+# Project structure
+
+Important project files:
+
+```text
+.
+├── server.js
+├── compose.yaml
+├── Dockerfile
+├── package.json
+├── .env.example
+├── README.md
+│
+├── src/
+│   ├── llm/
+│   │   ├── hello.js
+│   │   ├── extract.js
+│   │   └── retry.js
+│   │
+│   ├── routes/
+│   │   └── extract.js
+│   │
+│   └── schemas/
+│       └── extract.js
+│
+├── prompts/
+│   └── extract-v1.md
+│
+├── evals/
+│   ├── cases.json
+│   └── run.js
+│
+├── logs/
+│   └── quarantine.jsonl
+│
+└── docs/
+    ├── openapi.json
+    ├── docker-screenshot.png
+    └── postgres-screenshot.png
+```
+
+---
+
+# Development checkpoints
+
+### Test stub mode
+
+Set:
+
+```env
+LLM_STUB=1
+```
+
+Then:
+
+```bash
+docker compose up
+```
+
+Test:
+
+```bash
+curl -X POST http://localhost:3000/extract \
+  -H "Content-Type: application/json" \
+  -d '{"text":"John Smith is a Software Engineer."}'
+```
+
+### Test invalid input
+
+```bash
+curl -i -X POST http://localhost:3000/extract \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+Expected:
+
+```text
+400 Bad Request
+```
+
+### Run the evaluation
+
+With the real model enabled:
+
+```env
+LLM_STUB=0
+LLM_ENABLED=true
+```
+
+Run:
+
+```bash
+node evals/run.js
+```
+
+### View API logs
+
+```bash
+docker compose logs api
+```
+
+### View quarantine logs
+
+```bash
+docker compose exec api cat logs/quarantine.jsonl
+```
+
+---
+
+# Git and repository safety
+
+The project is developed through separate commits for the major stages rather than one final commit.
+
+Before publishing, verify:
+
+```bash
+git status
+```
+
+and:
+
+```bash
+git log --oneline
+```
+
+The repository must not contain:
+
+- `.env`
+- real API keys
+- private credentials
+- confidential CVs
+- employer/private data
+
+If an API key has ever been exposed, it should be revoked/rotated and replaced with a new key.
+
+---
+
+# AI Rematch
+
+After manually building and understanding the system, a separate AI-generated implementation can be placed in:
+
+```text
+ai-version/
+```
+
+The purpose is not to blindly accept AI-generated code.
+
+The rematch compares:
+
+- what AI implemented better
+- what AI got wrong
+- what AI silently ignored
+- what the original specification failed to mention
+- whether the generated code is actually understood
+- how a stronger specification changes the result
+
+This demonstrates an important AI engineering principle:
+
+> Better specifications generally produce better AI-generated implementations.
+
+---
+
+# Previous AI vs Me — Stage 6
+
+This repository also contains a previous AI-vs-me exercise for the PostgreSQL + Docker migration.
+
+The AI-generated version is stored separately under:
+
+```text
+ai-version/
+```
+
+The comparison identified several differences, including:
+
+- database error handling
+- PostgreSQL health checks
+- smaller Alpine images
+- production-oriented dependency installation
+- database schema constraints
+- restart policies
+- environment-variable handling
+- preservation of existing routes after improving the prompt
+
+The exercise demonstrated that an AI coding system can make reasonable implementation decisions, but it can also silently omit existing requirements that were not included in the specification.
+
+---
+
+# Original project goal
+
+The original Task API provides a simple CRUD backend for a to-do list.
+
+The FlyRank extension adds an AI-powered endpoint while applying production backend principles:
+
+```text
+API contract
++
+input validation
++
+LLM provider
++
+versioned prompt
++
+untrusted-output validation
++
+repair
++
+quarantine
++
+timeouts
++
+retries
++
+observability
++
+kill switch
++
+evaluation
+```
+
+The goal is not simply to make an LLM call.
+
+The goal is to build a backend system that can **safely and predictably use an LLM as an unreliable external dependency**.
