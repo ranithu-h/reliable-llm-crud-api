@@ -32,12 +32,24 @@ router.post("/extract", async (req, res) => {
     return res.json(stubResponse);
   }
 
+  if (process.env.LLM_ENABLED === "false") {
+    return res.status(503).json({
+      error: "LLM service is currently disabled",
+    });
+  }
+
   try {
     const output = await extractCV(result.data.text);
 
     return res.json(output);
   } catch (error) {
     console.error("Extraction failed:", error);
+
+    if (error.message === "Request timed out.") {
+      return res.status(504).json({
+        error: "LLM request timed out",
+      });
+    }
 
     if (
       error.message === "LLM output failed validation after repair" ||
