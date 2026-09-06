@@ -4,7 +4,7 @@ services:
     ports: ["3000:3000"]
     environment:
       DATABASE_URL: postgres://postgres:dev@db:5432/tasks
-      LLM_STUB: "1"
+      LLM_STUB: "0"
     depends_on: 
       db:
         condition: service_healthy

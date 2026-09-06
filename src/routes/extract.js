@@ -1,27 +1,12 @@
-import { z } from "zod";
 import express from "express";
+import { z } from "zod";
+import { extractOutputSchema } from "../schemas/extract.js";
+import { extractCV } from "../llm/extract.js";
 
 const router = express.Router();
 
 const extractInputSchema = z.object({
   text: z.string().min(1).max(5000),
-});
-
-const extractOutputSchema = z.object({
-  name: z.string().nullable(),
-  most_recent_title: z.string().nullable(),
-  years_experience: z.number().nullable(),
-  top_skills: z.array(z.string()).max(5),
-  education_level: z.enum([
-    "high_school",
-    "bachelors",
-    "masters",
-    "phd",
-    "other",
-    "unknown",
-  ]),
-  confidence: z.number().min(0).max(1),
-  needs_review: z.boolean(),
 });
 
 const stubResponse = {
@@ -34,12 +19,8 @@ const stubResponse = {
   needs_review: false,
 };
 
-function validateExtractInput(body) {
-  return extractInputSchema.safeParse(body);
-}
-
-router.post("/extract", (req, res) => {
-  const result = validateExtractInput(req.body);
+router.post("/extract", async (req, res) => {
+  const result = extractInputSchema.safeParse(req.body);
 
   if (!result.success) {
     return res.status(400).json({
@@ -48,21 +29,29 @@ router.post("/extract", (req, res) => {
   }
 
   if (process.env.LLM_STUB === "1") {
-    const output = extractOutputSchema.safeParse(stubResponse);
+    return res.json(stubResponse);
+  }
 
-    if (!output.success) {
-      return res.status(500).json({
-        error: "Invalid stub response",
+  try {
+    const output = await extractCV(result.data.text);
+
+    return res.json(output);
+  } catch (error) {
+    console.error("Extraction failed:", error);
+
+    if (
+      error.message === "LLM output failed validation after repair" ||
+      error.message === "LLM repair produced invalid JSON"
+    ) {
+      return res.status(422).json({
+        error: "LLM could not produce valid structured output",
       });
     }
 
-    return res.json(output.data);
+    return res.status(500).json({
+      error: "Extraction failed",
+    });
   }
-
-  return res.json({
-    message: "Input is valid",
-    text: result.data.text,
-  });
 });
 
 export default router;
