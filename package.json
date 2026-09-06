@@ -5,7 +5,8 @@
     "express": "^5.2.1",
     "openai": "^7.10.0",
     "pg": "^8.23.0",
-    "swagger-ui-express": "^5.0.1"
+    "swagger-ui-express": "^5.0.1",
+    "zod": "^4.5.4"
   },
   "name": "project-01-build-crud-api",
   "version": "1.0.0",

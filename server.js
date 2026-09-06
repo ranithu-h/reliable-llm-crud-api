@@ -1,10 +1,12 @@
 import express from 'express';
 import 'dotenv/config';
 import pg from 'pg';
+import extractRouter from "./src/routes/extract.js";
 
 const {Pool} = pg;
 const app = express();
 app.use(express.json());
+app.use(extractRouter);
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL
